@@ -1,3 +1,60 @@
+# Fork说明
+项目Fork自![Argo CD Image Updater](https://github.com/argoproj-labs/argocd-image-updater)
+## 修改点：
+* [ ] Provide web hook support to trigger update check for a given image
+主要是支持了官方并未支持的webhook功能
+基于这位老哥的MR合入了Master并简单修改![WIP: add Webhook to reduce no. of registry scans required #284](https://github.com/argoproj-labs/argocd-image-updater/pull/284)
+
+额外参考
+https://github.com/argoproj/argo-helm/issues/2027
+https://argocd-image-updater.readthedocs.io/en/stable/configuration/registries/
+
+- 支持webhook指定tag检查更新
+- 关闭了非webhook的检查更新逻辑
+保证只有webhook请求才会触发检查更新逻辑
+
+完整CICD链路
+user push gitlab -> gitlab runner CI (Build/Push) -> argocd image updater web hook (指定tag和仓库) -> 检查更新docker image -> argocd image updater notifications
+
+
+ConfigMap修改
+指定registries配置
+```
+---
+apiVersion: v1
+data:
+  registries.conf: |-
+    registries:
+    - name: Gitlab
+      api_url: https://registry.xxx.cn
+      ping: false
+      credentials: pullsecret:argocd/gitlab-registry
+      prefix: registry.xxx.cn
+      default: true
+      limit: 30
+kind: ConfigMap
+metadata:
+  labels:
+    app.kubernetes.io/name: argocd-image-updater-config
+    app.kubernetes.io/part-of: argocd-image-updater
+  name: argocd-image-updater-config
+  namespace: argocd
+```
+
+启动
+```
+argocd-image-updater run --registry-webhook-port 8888 --interval 30000s --registries-conf-path /app/config/registries.conf --loglevel debug
+```
+
+请求
+```
+curl -X POST https://argocd-image-updater:8888/api/webhook/registry.xxx.cn \
+  -H "Content-Type: application/json" \
+  -H "X-Docker-Event: push" \
+  -d '{"push_data":{"tag":"dev-0a9d8fcf"},"repository":{"name":"frontend/repo","repo_name":"frontend/repo"}}'
+```
+
+
 # Argo CD Image Updater
 
 ![Integration tests](https://github.com/argoproj-labs/argocd-image-updater/workflows/Integration%20tests/badge.svg?branch=master&event=push)

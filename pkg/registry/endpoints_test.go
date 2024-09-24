@@ -34,7 +34,7 @@ func TestNewRegistryEndpoint(t *testing.T) {
 	tagListSort := TagListSortLatestFirst
 	limit := 10
 	credsExpire := time.Minute * 30
-	endpoint := NewRegistryEndpoint(prefix, name, apiUrl, credentials, defaultNS, insecure, tagListSort, limit, credsExpire)
+	endpoint := NewRegistryEndpoint(prefix, name, apiUrl, credentials, defaultNS, insecure, tagListSort, limit)
 	assert.NotNil(t, endpoint)
 	assert.Equal(t, name, endpoint.RegistryName)
 	assert.Equal(t, prefix, endpoint.RegistryPrefix)
@@ -45,6 +45,7 @@ func TestNewRegistryEndpoint(t *testing.T) {
 	assert.Equal(t, defaultNS, endpoint.DefaultNS)
 	assert.Equal(t, tagListSort, endpoint.TagListSort)
 	assert.Equal(t, limit, endpoint.limit)
+	assert.Equal(t, "mysecret", endpoint.HookSecret)
 }
 
 func TestTagListSortFromString(t *testing.T) {
@@ -142,7 +143,7 @@ func Test_AddEndpoint(t *testing.T) {
 	RestoreDefaultRegistryConfiguration()
 
 	t.Run("Add new endpoint", func(t *testing.T) {
-		err := AddRegistryEndpoint(NewRegistryEndpoint("example.com", "Example", "https://example.com", "", "", false, TagListSortUnsorted, 5, 0))
+		err := AddRegistryEndpoint(NewRegistryEndpoint("example.com", "Example", "https://example.com", "", "", false, TagListSortUnsorted, 5, 0, "mysecret"))
 		require.NoError(t, err)
 	})
 	t.Run("Get example.com endpoint", func(t *testing.T) {
@@ -155,9 +156,10 @@ func Test_AddEndpoint(t *testing.T) {
 		assert.Equal(t, ep.Insecure, false)
 		assert.Equal(t, ep.DefaultNS, "")
 		assert.Equal(t, ep.TagListSort, TagListSortUnsorted)
+		assert.Equal(t, ep.HookSecret, "mysecret")
 	})
 	t.Run("Change existing endpoint", func(t *testing.T) {
-		err := AddRegistryEndpoint(NewRegistryEndpoint("example.com", "Example", "https://example.com", "", "library", true, TagListSortLatestFirst, 5, 0))
+		err := AddRegistryEndpoint(NewRegistryEndpoint("example.com", "Example", "https://example.com", "", "library", true, TagListSortLatestFirst, 5, 0, "mysecret"))
 		require.NoError(t, err)
 		ep, err := GetRegistryEndpoint("example.com")
 		require.NoError(t, err)
@@ -165,6 +167,7 @@ func Test_AddEndpoint(t *testing.T) {
 		assert.Equal(t, ep.Insecure, true)
 		assert.Equal(t, ep.DefaultNS, "library")
 		assert.Equal(t, ep.TagListSort, TagListSortLatestFirst)
+		assert.Equal(t, ep.HookSecret, "mysecret")
 	})
 }
 

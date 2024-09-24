@@ -24,6 +24,7 @@ type RegistryConfiguration struct {
 	DefaultNS   string        `yaml:"defaultns,omitempty"`
 	Limit       int           `yaml:"limit,omitempty"`
 	IsDefault   bool          `yaml:"default,omitempty"`
+	HookSecret  string        `yaml:"hooksecret,omitempty"`
 }
 
 // RegistryList contains multiple RegistryConfiguration items
@@ -60,7 +61,7 @@ func LoadRegistryConfiguration(path string, clear bool) error {
 		if tagSortMode != TagListSortUnsorted {
 			log.Warnf("Registry %s has tag sort mode set to %s, meta data retrieval will be disabled for this registry.", reg.ApiURL, tagSortMode)
 		}
-		ep := NewRegistryEndpoint(reg.Prefix, reg.Name, reg.ApiURL, reg.Credentials, reg.DefaultNS, reg.Insecure, tagSortMode, reg.Limit, reg.CredsExpire)
+		ep := NewRegistryEndpoint(reg.Prefix, reg.Name, reg.ApiURL, reg.Credentials, reg.DefaultNS, reg.Insecure, tagSortMode, reg.Limit, reg.CredsExpire, reg.HookSecret)
 		if reg.IsDefault {
 			if haveDefault {
 				dep := GetDefaultRegistry()

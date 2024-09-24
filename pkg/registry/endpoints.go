@@ -88,6 +88,7 @@ type RegistryEndpoint struct {
 	IsDefault      bool
 	lock           sync.RWMutex
 	limit          int
+	HookSecret     string
 }
 
 // registryTweaks should contain a list of registries whose settings cannot be
@@ -118,13 +119,13 @@ var defaultRegistry *RegistryEndpoint
 var registryLock sync.RWMutex
 
 func AddRegistryEndpointFromConfig(epc RegistryConfiguration) error {
-	ep := NewRegistryEndpoint(epc.Prefix, epc.Name, epc.ApiURL, epc.Credentials, epc.DefaultNS, epc.Insecure, TagListSortFromString(epc.TagSortMode), epc.Limit, epc.CredsExpire)
+	ep := NewRegistryEndpoint(epc.Prefix, epc.Name, epc.ApiURL, epc.Credentials, epc.DefaultNS, epc.Insecure, TagListSortFromString(epc.TagSortMode), epc.Limit, epc.CredsExpire, epc.HookSecret)
 	return AddRegistryEndpoint(ep)
 }
 
 // NewRegistryEndpoint returns an endpoint object with the given configuration
 // pre-populated and a fresh cache.
-func NewRegistryEndpoint(prefix, name, apiUrl, credentials, defaultNS string, insecure bool, tagListSort TagListSort, limit int, credsExpire time.Duration) *RegistryEndpoint {
+func NewRegistryEndpoint(prefix, name, apiUrl, credentials, defaultNS string, insecure bool, tagListSort TagListSort, limit int, credsExpire time.Duration, hookSecret string) *RegistryEndpoint {
 	if limit <= 0 {
 		limit = RateLimitNone
 	}
@@ -140,6 +141,7 @@ func NewRegistryEndpoint(prefix, name, apiUrl, credentials, defaultNS string, in
 		TagListSort:    tagListSort,
 		Limiter:        ratelimit.New(limit),
 		limit:          limit,
+		HookSecret:     hookSecret,
 	}
 	return ep
 }
@@ -176,7 +178,8 @@ func AddRegistryEndpoint(ep *RegistryEndpoint) error {
 // registries.
 func inferRegistryEndpointFromPrefix(prefix string) *RegistryEndpoint {
 	apiURL := "https://" + prefix
-	return NewRegistryEndpoint(prefix, prefix, apiURL, "", "", false, TagListSortUnsorted, 20, 0)
+	return NewRegistryEndpoint(prefix, prefix, apiURL, "", "", false, TagListSortUnsorted, 20, 0, "")
+
 }
 
 // GetRegistryEndpoint retrieves the endpoint information for the given prefix

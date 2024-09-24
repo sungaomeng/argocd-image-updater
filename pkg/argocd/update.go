@@ -18,6 +18,7 @@ import (
 	"github.com/argoproj-labs/argocd-image-updater/pkg/log"
 	"github.com/argoproj-labs/argocd-image-updater/pkg/registry"
 	"github.com/argoproj-labs/argocd-image-updater/pkg/tag"
+	"github.com/argoproj-labs/argocd-image-updater/pkg/webhook"
 
 	"github.com/argoproj/argo-cd/v2/pkg/apiclient/application"
 	"github.com/argoproj/argo-cd/v2/pkg/apis/application/v1alpha1"
@@ -143,7 +144,7 @@ func (wbc *WriteBackConfig) RequiresLocking() bool {
 }
 
 // UpdateApplication update all images of a single application. Will run in a goroutine.
-func UpdateApplication(updateConf *UpdateConfiguration, state *SyncIterationState) ImageUpdaterResult {
+func UpdateApplication(updateConf *UpdateConfiguration, state *SyncIterationState, webhookEvent webhook.WebhookEvent) ImageUpdaterResult {
 	var needUpdate bool = false
 
 	result := ImageUpdaterResult{}
@@ -247,11 +248,72 @@ func UpdateApplication(updateConf *UpdateConfiguration, state *SyncIterationStat
 		}
 
 		// Get list of available image tags from the repository
-		tags, err := rep.GetTags(applicationImage, regClient, &vc)
-		if err != nil {
-			imgCtx.Errorf("Could not get tags from registry: %v", err)
-			result.NumErrors += 1
-			continue
+		// if we got webhookEvent, we only consider the current tag and the incoming tag from webhook
+		var tags *tag.ImageTagList
+		if (webhook.WebhookEvent{}) != webhookEvent {
+			log.Debugf("webhookEvent.ImageName: %v", webhookEvent.ImageName)
+			log.Debugf("updateableImage.ImageName: %v", updateableImage.ImageName)
+
+			if webhookEvent.ImageName != updateableImage.ImageName {
+				result.NumSkipped += 1
+				continue
+			}
+			currentTag := updateableImage.ImageTag
+			if currentTag.TagDate == nil {
+				defaultDate := time.Unix(0, 0)
+				currentTag.TagDate = &defaultDate
+			}
+
+			err = regClient.NewRepository(webhookEvent.ImageName)
+			if err != nil {
+				log.Errorf("NewRepository error: %s, %v", webhookEvent.TagName, err)
+			}
+
+			newTag := tag.NewImageTag(webhookEvent.TagName, webhookEvent.CreatedAt, webhookEvent.Digest)
+			m, e := regClient.ManifestForTag(currentTag.TagName)
+			if e != nil {
+				log.Errorf("Could not get manifest for tag %s: %v", currentTag.TagName, e)
+			} else {
+				r, e := regClient.TagMetadata(m, vc.Options)
+				if e != nil {
+					log.Errorf("Could not get metadata for tag %s: %v", currentTag.TagName, e)
+				} else {
+					currentTag.TagDate = &r.CreatedAt
+				}
+			}
+
+			log.Debugf("currentTag: %s %s %s", currentTag.TagName, currentTag.TagDate, currentTag.TagDigest)
+			log.Debugf("newTag: %s %s %s", newTag.TagName, newTag.TagDate, newTag.TagDigest)
+
+			preTags := []*tag.ImageTag{currentTag, newTag}
+			tags = tag.NewImageTagList()
+
+			if vc.MatchFunc != nil || len(vc.IgnoreList) > 0 || vc.Strategy.WantsOnlyConstraintTag() {
+				for _, t := range preTags {
+					if (vc.MatchFunc != nil && !vc.MatchFunc(
+						t.TagName,
+						vc.MatchArgs,
+					)) || vc.IsTagIgnored(t.TagName) || (vc.Strategy.WantsOnlyConstraintTag() && t.TagName != vc.Constraint) {
+						log.Debugf("Removing tag %s because it either didn't match defined pattern or is ignored", t)
+					} else {
+						tags.Add(t)
+					}
+				}
+			} else {
+				for _, t := range preTags {
+					tags.Add(t)
+				}
+			}
+		} else {
+			log.Debugf("Webhook event empty. This is a regular CheckInterval run")
+			result.NumSkipped = len(updateConf.UpdateApp.Images) // 将所有图像标记为已跳过,并且跳过后续检测逻辑,保证只有webhook请求才会触发检查更新操作
+			return result
+			// tags, err = rep.GetTags(applicationImage, regClient, &vc)
+			// if err != nil {
+			// 	imgCtx.Errorf("Could not get tags from registry: %v", err)
+			// 	result.NumErrors += 1
+			// 	continue
+			// }
 		}
 
 		imgCtx.Tracef("List of available tags found: %v", tags.Tags())
